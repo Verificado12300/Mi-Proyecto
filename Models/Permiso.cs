@@ -1,0 +1,11 @@
+namespace SistemaPOS.Models
+{
+    public class Permiso
+    {
+        public int PermisoID { get; set; }
+        public string Modulo { get; set; }
+        public string Accion { get; set; }
+        public string Descripcion { get; set; }
+        public string CodigoPermiso { get; set; }
+    }
+}

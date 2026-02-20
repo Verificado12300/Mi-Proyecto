@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj /t:Build /p:Configuration=Debug /verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj /t:Build /p:Configuration=Debug /verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" \"SistemaPOS.csproj\" -t:Build -p:Configuration=Debug -verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" \"E:/SistemaPOS/SistemaPOS.csproj\" -t:Build -p:Configuration=Debug)",
+      "Bash(ls:*)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj -t:Build -p:Configuration=Debug -v:q)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj -t:Build -p:Configuration=Debug -v:q)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj /p:Configuration=Debug /verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" /e/SistemaPOS/SistemaPOS.csproj /p:Configuration=Debug /verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj /p:Configuration=Debug /verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj -p:Configuration=Debug -verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj -t:Build -p:Configuration=Debug -verbosity:minimal)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.sln /p:Configuration=Debug /verbosity:minimal)",
+      "Bash(sqlite3:*)",
+      "Bash(python3:*)",
+      "Bash(py -3 -c:*)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe\" SistemaPOS.csproj -p:Configuration=Debug -v:minimal)",
+      "Bash(python:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet script:*)",
+      "Bash(pip install:*)",
+      "Bash(xxd:*)",
+      "Bash(perl -pi -e 'BEGIN{binmode STDOUT; binmode STDIN;} s/\\\\xc3\\\\x83\\\\xc2\\\\x8d/\\\\xc3\\\\x8d/g':*)",
+      "Bash(grep:*)",
+      "Bash(for f in FormKardex FormBalanceGeneral FormEstadoResultados FormFlujoCaja FormGastos FormCaja FormCuentasPorPagar FormHistorialVentas FormHistorialCompras)",
+      "Bash(do echo \"=== $f ===\" grep -rn \"btnImprimir\\\\|btnExportar\" \"E:/SistemaPOS/Forms/\" --include=\"*.cs\" -l)",
+      "Bash(done)"
+    ]
+  }
+}
