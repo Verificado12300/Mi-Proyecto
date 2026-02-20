@@ -418,9 +418,33 @@ namespace SistemaPOS.Data
                             }
                         }
 
-                        // Anular crÃ©dito si existe
-                        string queryAnularCredito = "UPDATE CreditosCompras SET Estado = 'PAGADO' WHERE CompraID = @CompraID AND Estado = 'PENDIENTE'";
-                        using (var cmd = new SQLiteCommand(queryAnularCredito, connection, transaction))
+                        // Si ya existen pagos de proveedor registrados, no permitir anular.
+                        string queryPagosRegistrados = @"
+                            SELECT COUNT(1)
+                            FROM PagosProveedores pp
+                            INNER JOIN CuentasPorPagar cp ON cp.CuentaPorPagarID = pp.CuentaPorPagarID
+                            WHERE cp.CompraID = @CompraID";
+
+                        using (var cmd = new SQLiteCommand(queryPagosRegistrados, connection, transaction))
+                        {
+                            cmd.Parameters.AddWithValue("@CompraID", compraID);
+                            var cantidadPagos = Convert.ToInt32(cmd.ExecuteScalar());
+                            if (cantidadPagos > 0)
+                            {
+                                throw new Exception("No se puede anular la compra porque ya tiene pagos de proveedor registrados.");
+                            }
+                        }
+
+                        // Retirar deuda asociada por anulacion (evitar marcar como PAGADO).
+                        string queryEliminarCuentasPorPagar = "DELETE FROM CuentasPorPagar WHERE CompraID = @CompraID";
+                        using (var cmd = new SQLiteCommand(queryEliminarCuentasPorPagar, connection, transaction))
+                        {
+                            cmd.Parameters.AddWithValue("@CompraID", compraID);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        string queryEliminarCredito = "DELETE FROM CreditosCompras WHERE CompraID = @CompraID";
+                        using (var cmd = new SQLiteCommand(queryEliminarCredito, connection, transaction))
                         {
                             cmd.Parameters.AddWithValue("@CompraID", compraID);
                             cmd.ExecuteNonQuery();
