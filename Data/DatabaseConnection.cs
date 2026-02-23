@@ -226,6 +226,102 @@ namespace SistemaPOS.Data
                     {
                         // Ignorar para mantener compatibilidad con instalaciones antiguas.
                     }
+
+                    // ===== MODULO CONTABLE =====
+
+                    // Tabla: CuentasContables
+                    using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            CREATE TABLE IF NOT EXISTS CuentasContables (
+                                IdCuenta INTEGER PRIMARY KEY AUTOINCREMENT,
+                                Codigo TEXT(20) NOT NULL UNIQUE,
+                                Nombre TEXT(200) NOT NULL,
+                                Tipo TEXT(20) NOT NULL CHECK(Tipo IN ('ACTIVO','PASIVO','PATRIMONIO','INGRESO','GASTO')),
+                                Activa INTEGER DEFAULT 1 CHECK(Activa IN (0,1))
+                            );";
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Tabla: Asientos
+                    using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            CREATE TABLE IF NOT EXISTS Asientos (
+                                IdAsiento INTEGER PRIMARY KEY AUTOINCREMENT,
+                                FechaHora TEXT NOT NULL,
+                                TipoOperacion TEXT(20) NOT NULL CHECK(TipoOperacion IN ('VENTA','COMPRA','AJUSTE','ANULACION')),
+                                Documento TEXT(100),
+                                Usuario TEXT(100),
+                                Observacion TEXT(500)
+                            );";
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Tabla: AsientosDetalle
+                    using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            CREATE TABLE IF NOT EXISTS AsientosDetalle (
+                                IdDetalle INTEGER PRIMARY KEY AUTOINCREMENT,
+                                IdAsiento INTEGER NOT NULL,
+                                IdCuenta INTEGER NOT NULL,
+                                Debe REAL NOT NULL DEFAULT 0 CHECK(Debe >= 0),
+                                Haber REAL NOT NULL DEFAULT 0 CHECK(Haber >= 0),
+                                FOREIGN KEY (IdAsiento) REFERENCES Asientos(IdAsiento),
+                                FOREIGN KEY (IdCuenta) REFERENCES CuentasContables(IdCuenta)
+                            );";
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    // Indices contables
+                    string[] indicesContables = new[]
+                    {
+                        "CREATE INDEX IF NOT EXISTS idx_asientos_fecha ON Asientos(FechaHora);",
+                        "CREATE INDEX IF NOT EXISTS idx_asientos_tipo ON Asientos(TipoOperacion);",
+                        "CREATE INDEX IF NOT EXISTS idx_asientosdetalle_asiento ON AsientosDetalle(IdAsiento);",
+                        "CREATE INDEX IF NOT EXISTS idx_asientosdetalle_cuenta ON AsientosDetalle(IdCuenta);"
+                    };
+
+                    foreach (var index in indicesContables)
+                    {
+                        using (var cmd = connection.CreateCommand())
+                        {
+                            cmd.CommandText = index;
+                            cmd.ExecuteNonQuery();
+                        }
+                    }
+
+                    // Insertar cuentas contables minimas (solo si la tabla esta vacia)
+                    using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT COUNT(*) FROM CuentasContables";
+                        long countCuentas = (long)cmd.ExecuteScalar();
+
+                        if (countCuentas == 0)
+                        {
+                            string[] cuentasSeed = new[]
+                            {
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('101', 'Caja', 'ACTIVO', 1);",
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('102', 'Bancos', 'ACTIVO', 1);",
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('201', 'Inventario', 'ACTIVO', 1);",
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('401', 'Ventas', 'INGRESO', 1);",
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('501', 'Costo de Ventas', 'GASTO', 1);",
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('502', 'Gastos Operativos', 'GASTO', 1);",
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('601', 'Cuentas por Pagar', 'PASIVO', 1);",
+                                "INSERT INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('701', 'Capital Inicial', 'PATRIMONIO', 1);"
+                            };
+
+                            foreach (var insert in cuentasSeed)
+                            {
+                                using (var cmdInsert = connection.CreateCommand())
+                                {
+                                    cmdInsert.CommandText = insert;
+                                    cmdInsert.ExecuteNonQuery();
+                                }
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex)

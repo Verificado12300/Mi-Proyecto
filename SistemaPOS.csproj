@@ -105,6 +105,7 @@
     <Compile Include="Data\FlujoCajaRepository.cs" />
     <Compile Include="Data\EstadoResultadosRepository.cs" />
     <Compile Include="Data\BalanceRepository.cs" />
+    <Compile Include="Data\ContabilidadRepository.cs" />
     <Compile Include="Data\PresentacionRepository.cs" />
     <Compile Include="Data\ProductoRepository.cs" />
     <Compile Include="Data\ProveedorRepository.cs" />
@@ -375,6 +376,9 @@
     <Compile Include="Forms\Ventas\FormVentas.Designer.cs">
       <DependentUpon>FormVentas.cs</DependentUpon>
     </Compile>
+    <Compile Include="Models\Asiento.cs" />
+    <Compile Include="Models\AsientoDetalle.cs" />
+    <Compile Include="Models\CuentaContable.cs" />
     <Compile Include="Models\Ajuste.cs" />
     <Compile Include="Models\Caja.cs" />
     <Compile Include="Models\Categoria.cs" />
