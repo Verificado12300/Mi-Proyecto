@@ -1,4 +1,5 @@
 ﻿using SistemaPOS.Models;
+using SistemaPOS.Utils;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -84,6 +85,14 @@ namespace SistemaPOS.Data
 
                             long ventaID = connection.LastInsertRowId;
 
+                            // Calcular costo promedio por producto ANTES de descontar stock
+                            var costoPromedioPorProducto = new Dictionary<int, decimal>();
+                            foreach (var d in detalles)
+                            {
+                                if (!costoPromedioPorProducto.ContainsKey(d.ProductoID))
+                                    costoPromedioPorProducto[d.ProductoID] = ContabilidadRepository.ObtenerCostoPromedioProducto(d.ProductoID, connection, transaction);
+                            }
+
                             foreach (var detalle in detalles)
                             {
                                 string queryDetalle = @"
@@ -143,6 +152,80 @@ namespace SistemaPOS.Data
                                         DateTime.Now.AddDays(30).ToString("yyyy-MM-dd"));
                                     cmd.ExecuteNonQuery();
                                 }
+                            }
+
+                            // ===== ASIENTO CONTABLE AUTOMATICO =====
+                            // Determinar cuentas contables
+                            bool esCredito = venta.Estado == "CREDITO";
+                            int idCuentaCaja = ContabilidadRepository.ObtenerIdCuenta(esCredito ? "103" : "101", connection, transaction);
+                            int idCuentaVentas = ContabilidadRepository.ObtenerIdCuenta("401", connection, transaction);
+                            int idCuentaCostoVentas = ContabilidadRepository.ObtenerIdCuenta("501", connection, transaction);
+                            int idCuentaInventario = ContabilidadRepository.ObtenerIdCuenta("201", connection, transaction);
+
+                            // Calcular costo total de mercaderia vendida
+                            decimal totalCostoVenta = 0;
+                            foreach (var d in detalles)
+                            {
+                                decimal costoPromedio = costoPromedioPorProducto.ContainsKey(d.ProductoID)
+                                    ? costoPromedioPorProducto[d.ProductoID] : 0;
+                                totalCostoVenta += d.CantidadUnidadesBase * costoPromedio;
+                            }
+                            totalCostoVenta = Math.Round(totalCostoVenta, 2);
+
+                            // Obtener nombre de usuario
+                            string nombreUsuario = SesionActual.Usuario != null
+                                ? SesionActual.Usuario.NombreCompleto
+                                : venta.UsuarioID.ToString();
+
+                            // Crear cabecera del asiento
+                            var asiento = new Asiento
+                            {
+                                FechaHora = DateTime.Now,
+                                TipoOperacion = "VENTA",
+                                Documento = venta.NumeroVenta,
+                                Usuario = nombreUsuario,
+                                Observacion = $"Venta #{ventaID}"
+                            };
+                            long idAsiento = ContabilidadRepository.CrearAsiento(asiento, connection, transaction);
+
+                            // Linea 1: Debe Caja (o CxC) por el total
+                            ContabilidadRepository.AgregarDetalle(new AsientoDetalle
+                            {
+                                IdAsiento = (int)idAsiento,
+                                IdCuenta = idCuentaCaja,
+                                Debe = venta.Total,
+                                Haber = 0
+                            }, connection, transaction);
+
+                            // Linea 2: Haber Ventas por el total
+                            ContabilidadRepository.AgregarDetalle(new AsientoDetalle
+                            {
+                                IdAsiento = (int)idAsiento,
+                                IdCuenta = idCuentaVentas,
+                                Debe = 0,
+                                Haber = venta.Total
+                            }, connection, transaction);
+
+                            // Lineas de costo (solo si hay costo calculado)
+                            if (totalCostoVenta > 0)
+                            {
+                                // Linea 3: Debe Costo de Ventas
+                                ContabilidadRepository.AgregarDetalle(new AsientoDetalle
+                                {
+                                    IdAsiento = (int)idAsiento,
+                                    IdCuenta = idCuentaCostoVentas,
+                                    Debe = totalCostoVenta,
+                                    Haber = 0
+                                }, connection, transaction);
+
+                                // Linea 4: Haber Inventario
+                                ContabilidadRepository.AgregarDetalle(new AsientoDetalle
+                                {
+                                    IdAsiento = (int)idAsiento,
+                                    IdCuenta = idCuentaInventario,
+                                    Debe = 0,
+                                    Haber = totalCostoVenta
+                                }, connection, transaction);
                             }
 
                             transaction.Commit();

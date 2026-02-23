@@ -322,6 +322,13 @@ namespace SistemaPOS.Data
                             }
                         }
                     }
+
+                    // Cuenta adicional: Cuentas por Cobrar (para ventas a credito)
+                    using (var cmd = connection.CreateCommand())
+                    {
+                        cmd.CommandText = "INSERT OR IGNORE INTO CuentasContables (Codigo, Nombre, Tipo, Activa) VALUES ('103', 'Cuentas por Cobrar', 'ACTIVO', 1);";
+                        cmd.ExecuteNonQuery();
+                    }
                 }
             }
             catch (Exception ex)
