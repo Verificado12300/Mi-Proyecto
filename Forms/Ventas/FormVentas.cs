@@ -19,8 +19,11 @@ namespace SistemaPOS.Forms.Ventas
         private int _cajaID;
         private List<dynamic> _todosLosClientes; // Cache de clientes
         private bool _actualizandoDesdeEdicion; // Flag para evitar ciclo al editar cantidad/total
+        private bool _aplicandoPago; // Flag para evitar que RadioPago_CheckedChanged interfiera al aplicar resultado
         private decimal _tasaIGV = 0.18m;
         private decimal _rawCartTotal = 0m; // suma bruta de líneas del carrito sin ajuste por IGV adicional
+        private bool _vistaCards = false; // false=lista, true=tarjetas
+        private int _categoriaFiltro = 0;  // 0=TODOS, >0=CategoriaID
 
         public FormVentas()
         {
@@ -30,6 +33,7 @@ namespace SistemaPOS.Forms.Ventas
             ConfigurarDataGridViews();
             ConfigurarComboClientes();
             InicializarVenta();
+            CargarCategorias();
             CargarProductos();
             CargarClientes();
 
@@ -91,9 +95,13 @@ namespace SistemaPOS.Forms.Ventas
             cmbClientes.SelectedIndexChanged += CmbClientes_SelectedIndexChanged;
             cmbClientes.TextChanged += CmbClientes_TextChanged;
 
-            btnCobrar.Click += BtnCobrar_Click;
+            btnCobrar.Click   += BtnCobrar_Click;
             btnCancelar.Click += BtnCancelar_Click;
             btnHistorial.Click += BtnHistorial_Click;
+            btnPrevia.Click   += BtnPrevia_Click;
+            btnVistaLista.Click += BtnVistaLista_Click;
+            btnVistaCards.Click += BtnVistaCards_Click;
+
             dgvProductos.EditingControlShowing += DgvProductos_EditingControlShowing;
             dgvProductos.CellValueChanged += DgvProductos_CellValueChanged;
             dgvProductos.CurrentCellDirtyStateChanged += DgvProductos_CurrentCellDirtyStateChanged;
@@ -241,6 +249,10 @@ namespace SistemaPOS.Forms.Ventas
 
                 var productos = ProductoRepository.BuscarProductos(busqueda);
 
+                // Filtro por categoría seleccionada
+                if (_categoriaFiltro > 0)
+                    productos = productos.FindAll(p => p.CategoriaID == _categoriaFiltro);
+
                 int numero = 1;
                 foreach (var producto in productos)
                 {
@@ -324,7 +336,10 @@ namespace SistemaPOS.Forms.Ventas
 
         private void TxtBuscar_TextChanged(object sender, EventArgs e)
         {
-            CargarProductos(txtBuscar.Text.Trim());
+            if (_vistaCards)
+                CargarProductosTarjetas(txtBuscar.Text.Trim(), _categoriaFiltro);
+            else
+                CargarProductos(txtBuscar.Text.Trim());
         }
 
         private void DgvProductos_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
@@ -637,6 +652,8 @@ namespace SistemaPOS.Forms.Ventas
 
         private void RadioPago_CheckedChanged(object sender, EventArgs e)
         {
+            if (_aplicandoPago) return; // evitar interferencia al aplicar resultado del modal
+
             txtEfectivo.Enabled = false;
             txtYape.Enabled = false;
             txtTransferencia.Enabled = false;
@@ -740,9 +757,29 @@ namespace SistemaPOS.Forms.Ventas
 
         private void BtnCobrar_Click(object sender, EventArgs e)
         {
-            if (!ValidarVenta())
+            // Validación básica del carrito
+            if (dgvCarritoVenta.Rows.Count == 0)
+            {
+                MessageBox.Show("Agrega productos al carrito antes de cobrar.", "Validación",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
+            }
+            if (!TryParseMonto(txtTotalPagar.Text, out decimal totalModal) || totalModal <= 0)
+            {
+                MessageBox.Show("El total de la venta es inválido.", "Validación");
+                return;
+            }
 
+            // Abrir modal de pago
+            using (var formPago = new FormPago(totalModal))
+            {
+                if (formPago.ShowDialog(this) != System.Windows.Forms.DialogResult.OK)
+                    return;
+
+                AplicarResultadoPago(formPago);
+            }
+
+            // Verificar cliente para crédito
             if (rbCredito.Checked)
             {
                 if (_clienteID == 1 || _clienteID == 0)
@@ -754,6 +791,37 @@ namespace SistemaPOS.Forms.Ventas
                 }
             }
 
+            ProcesarVenta();
+        }
+
+        private void AplicarResultadoPago(FormPago formPago)
+        {
+            _aplicandoPago = true;
+            try
+            {
+                string metodo = formPago.MetodoPago;
+                rbEfectivo.Checked      = metodo == "EFECTIVO";
+                rbYape.Checked          = metodo == "YAPE";
+                rbTransferencia.Checked = metodo == "TRANSFERENCIA";
+                rbTarjeta.Checked       = metodo == "TARJETA";
+                rbMixto.Checked         = metodo == "MIXTO";
+                rbCredito.Checked       = metodo == "CREDITO";
+
+                txtEfectivo.Text      = formPago.MontoEfectivo      > 0 ? formPago.MontoEfectivo.ToString("N2")      : "";
+                txtYape.Text          = formPago.MontoYape           > 0 ? formPago.MontoYape.ToString("N2")          : "";
+                txtTransferencia.Text = formPago.MontoTransferencia  > 0 ? formPago.MontoTransferencia.ToString("N2") : "";
+                txtTarjeta.Text       = formPago.MontoTarjeta        > 0 ? formPago.MontoTarjeta.ToString("N2")       : "";
+                txtRecibido.Text      = formPago.MontoRecibido.ToString("N2");
+                txtVuelto.Text        = formPago.Vuelto.ToString("N2");
+            }
+            finally
+            {
+                _aplicandoPago = false;
+            }
+        }
+
+        private void ProcesarVenta()
+        {
             try
             {
                 decimal efectivo = decimal.TryParse(txtEfectivo.Text, out decimal ef) ? ef : 0;
@@ -1148,6 +1216,332 @@ namespace SistemaPOS.Forms.Ventas
             valor = (valor ?? string.Empty).Trim().Replace("S/ ", "");
             return decimal.TryParse(valor, NumberStyles.Number, CultureInfo.CurrentCulture, out monto)
                 || decimal.TryParse(valor, NumberStyles.Number, CultureInfo.InvariantCulture, out monto);
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // CATEGORÍAS — chips horizontales
+        // ══════════════════════════════════════════════════════════════
+
+        private void CargarCategorias()
+        {
+            flpCategorias.Controls.Clear();
+
+            var btnTodos = CrearChipCategoria("TODOS", 0, activo: true);
+            flpCategorias.Controls.Add(btnTodos);
+
+            try
+            {
+                var categorias = CategoriaRepository.ObtenerTodas();
+                foreach (var cat in categorias)
+                {
+                    var btn = CrearChipCategoria(cat.Nombre, cat.CategoriaID, activo: false);
+                    flpCategorias.Controls.Add(btn);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error cargando categorías: {ex.Message}");
+            }
+        }
+
+        private System.Windows.Forms.Button CrearChipCategoria(string texto, int categoriaID, bool activo)
+        {
+            var btn = new System.Windows.Forms.Button
+            {
+                Text      = texto,
+                Tag       = categoriaID,
+                AutoSize  = false,
+                Height    = 28,
+                MinimumSize = new System.Drawing.Size(70, 28),
+                Padding   = new System.Windows.Forms.Padding(10, 0, 10, 0),
+                Cursor    = System.Windows.Forms.Cursors.Hand,
+                FlatStyle = System.Windows.Forms.FlatStyle.Flat,
+                Font      = new System.Drawing.Font("Segoe UI", 8.5F, System.Drawing.FontStyle.Bold),
+                Margin    = new System.Windows.Forms.Padding(0, 0, 6, 0),
+            };
+            btn.FlatAppearance.BorderSize = 1;
+
+            // Medir el texto y ajustar ancho
+            using (var g = btn.CreateGraphics())
+            {
+                var sz = g.MeasureString(texto, btn.Font);
+                btn.Width = (int)sz.Width + 24;
+            }
+
+            AplicarEstiloChip(btn, activo);
+            btn.Click += (s, e) =>
+            {
+                _categoriaFiltro = (int)btn.Tag;
+                foreach (System.Windows.Forms.Button b in flpCategorias.Controls)
+                    AplicarEstiloChip(b, (int)b.Tag == _categoriaFiltro);
+                if (_vistaCards)
+                    CargarProductosTarjetas(txtBuscar.Text.Trim(), _categoriaFiltro);
+                else
+                    CargarProductos(txtBuscar.Text.Trim());
+            };
+            return btn;
+        }
+
+        private void AplicarEstiloChip(System.Windows.Forms.Button btn, bool activo)
+        {
+            if (activo)
+            {
+                btn.BackColor = System.Drawing.Color.FromArgb(37, 99, 235);
+                btn.ForeColor = System.Drawing.Color.White;
+                btn.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(37, 99, 235);
+            }
+            else
+            {
+                btn.BackColor = System.Drawing.Color.White;
+                btn.ForeColor = System.Drawing.Color.FromArgb(45, 52, 54);
+                btn.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(200, 200, 200);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // VISTA LISTA / TARJETAS
+        // ══════════════════════════════════════════════════════════════
+
+        private void BtnVistaLista_Click(object sender, EventArgs e)
+        {
+            if (!_vistaCards) return;
+            _vistaCards = false;
+            btnVistaLista.BackColor = System.Drawing.Color.FromArgb(37, 99, 235);
+            btnVistaLista.ForeColor = System.Drawing.Color.White;
+            btnVistaCards.BackColor = System.Drawing.Color.White;
+            btnVistaCards.ForeColor = System.Drawing.Color.FromArgb(45, 52, 54);
+
+            flpProductCards.Visible = false;
+            dgvProductos.Visible    = true;
+            CargarProductos(txtBuscar.Text.Trim());
+        }
+
+        private void BtnVistaCards_Click(object sender, EventArgs e)
+        {
+            if (_vistaCards) return;
+            _vistaCards = true;
+            btnVistaCards.BackColor = System.Drawing.Color.FromArgb(37, 99, 235);
+            btnVistaCards.ForeColor = System.Drawing.Color.White;
+            btnVistaLista.BackColor = System.Drawing.Color.White;
+            btnVistaLista.ForeColor = System.Drawing.Color.FromArgb(45, 52, 54);
+
+            dgvProductos.Visible    = false;
+            flpProductCards.Visible = true;
+            CargarProductosTarjetas(txtBuscar.Text.Trim(), _categoriaFiltro);
+        }
+
+        private void CargarProductosTarjetas(string busqueda = "", int categoriaID = 0)
+        {
+            flpProductCards.Controls.Clear();
+
+            try
+            {
+                var productos = ProductoRepository.BuscarProductos(busqueda);
+
+                // Filtro de categoría cliente-side
+                if (categoriaID > 0)
+                    productos = productos.FindAll(p => p.CategoriaID == categoriaID);
+
+                foreach (var producto in productos)
+                {
+                    var presentaciones = ProductoRepository.ObtenerPresentaciones(producto.ProductoID);
+                    if (presentaciones.Count == 0) continue;
+
+                    var card = CrearTarjetaProducto(producto, presentaciones);
+                    flpProductCards.Controls.Add(card);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error cargando tarjetas: {ex.Message}");
+            }
+        }
+
+        private System.Windows.Forms.Panel CrearTarjetaProducto(
+            SistemaPOS.Models.Producto producto,
+            System.Collections.Generic.List<SistemaPOS.Models.ProductoPresentacion> presentaciones)
+        {
+            const int CARD_W = 168, CARD_H = 210;
+
+            var card = new System.Windows.Forms.Panel
+            {
+                Size      = new System.Drawing.Size(CARD_W, CARD_H),
+                BackColor = System.Drawing.Color.White,
+                Cursor    = System.Windows.Forms.Cursors.Hand,
+                Margin    = new System.Windows.Forms.Padding(6),
+                Tag       = new { ProductoID = producto.ProductoID, Presentaciones = presentaciones,
+                                  UnidadBaseID = producto.UnidadBaseID },
+            };
+
+            // Imagen o placeholder
+            var pic = new System.Windows.Forms.PictureBox
+            {
+                Location  = new System.Drawing.Point(0, 0),
+                Size      = new System.Drawing.Size(CARD_W, 110),
+                SizeMode  = System.Windows.Forms.PictureBoxSizeMode.Zoom,
+                BackColor = System.Drawing.Color.FromArgb(240, 242, 246),
+            };
+            if (producto.Imagen != null && producto.Imagen.Length > 0)
+            {
+                try
+                {
+                    using (var ms = new System.IO.MemoryStream(producto.Imagen))
+                    using (var img = System.Drawing.Image.FromStream(ms))
+                        pic.Image = new System.Drawing.Bitmap(img);
+                }
+                catch { /* sin imagen */ }
+            }
+            card.Controls.Add(pic);
+
+            // Nombre
+            var lblNom = new System.Windows.Forms.Label
+            {
+                Text      = producto.Nombre,
+                Location  = new System.Drawing.Point(6, 114),
+                Size      = new System.Drawing.Size(CARD_W - 12, 34),
+                Font      = new System.Drawing.Font("Segoe UI", 8.5F, System.Drawing.FontStyle.Bold),
+                ForeColor = System.Drawing.Color.FromArgb(45, 52, 54),
+            };
+            card.Controls.Add(lblNom);
+
+            // Precio (primera presentación)
+            string precio = presentaciones.Count > 0 ? $"S/ {presentaciones[0].PrecioVenta:N2}" : "";
+            var lblPrecio = new System.Windows.Forms.Label
+            {
+                Text      = precio,
+                Location  = new System.Drawing.Point(6, 150),
+                Size      = new System.Drawing.Size(CARD_W - 12, 20),
+                Font      = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold),
+                ForeColor = System.Drawing.Color.FromArgb(39, 174, 96),
+            };
+            card.Controls.Add(lblPrecio);
+
+            // Botón Agregar
+            var btnAdd = new System.Windows.Forms.Button
+            {
+                Text      = "+ Agregar",
+                Location  = new System.Drawing.Point(6, 178),
+                Size      = new System.Drawing.Size(CARD_W - 12, 26),
+                BackColor = System.Drawing.Color.FromArgb(37, 99, 235),
+                ForeColor = System.Drawing.Color.White,
+                Cursor    = System.Windows.Forms.Cursors.Hand,
+                FlatStyle = System.Windows.Forms.FlatStyle.Flat,
+                Font      = new System.Drawing.Font("Segoe UI", 8.5F, System.Drawing.FontStyle.Bold),
+            };
+            btnAdd.FlatAppearance.BorderSize = 0;
+
+            // Capturar variables para el closure
+            var prod     = producto;
+            var pres      = presentaciones;
+            btnAdd.Click += (s, e) =>
+            {
+                var item2 = card.Tag as dynamic;
+                string unidad = ObtenerSimboloUnidad((int)item2.UnidadBaseID);
+                AgregarAlCarrito(prod.ProductoID, prod.Nombre, pres[0], unidad);
+            };
+
+            // Double-click en la tarjeta también agrega
+            card.DoubleClick += (s, e) =>
+            {
+                string unidad = ObtenerSimboloUnidad(producto.UnidadBaseID);
+                AgregarAlCarrito(producto.ProductoID, producto.Nombre, presentaciones[0], unidad);
+            };
+
+            card.Controls.Add(btnAdd);
+
+            // Borde sutil
+            card.Paint += (s, e) =>
+            {
+                using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(223, 228, 234), 1))
+                    e.Graphics.DrawRectangle(pen, 0, 0, card.Width - 1, card.Height - 1);
+            };
+
+            return card;
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // VISTA PREVIA
+        // ══════════════════════════════════════════════════════════════
+
+        private void BtnPrevia_Click(object sender, EventArgs e)
+        {
+            if (dgvCarritoVenta.Rows.Count == 0)
+            {
+                MessageBox.Show("Agrega productos al carrito para ver la vista previa.", "Vista Previa",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                var parametros  = ReportHelper.GetCompanyParameters();
+                var dt          = ObtenerDatosTicketPrevia(parametros);
+                var dataSources = new Dictionary<string, DataTable> { { "DsDetalleVenta", dt } };
+
+                ReportHelper.MostrarDialogoExportacion(
+                    ReportHelper.GetRdlcPath(@"Documents\RptTicketVenta.rdlc"),
+                    dataSources, parametros, "previa_ticket");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error en vista previa: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private DataTable ObtenerDatosTicketPrevia(Dictionary<string, string> parametros)
+        {
+            var dt = new DataTable("DetalleVenta");
+            dt.Columns.Add("Numero",        typeof(int));
+            dt.Columns.Add("Producto",      typeof(string));
+            dt.Columns.Add("Presentacion",  typeof(string));
+            dt.Columns.Add("Cantidad",      typeof(string));
+            dt.Columns.Add("PrecioUnitario",typeof(decimal));
+            dt.Columns.Add("SubTotal",      typeof(decimal));
+
+            parametros["pTipoComprobante"] = cmbTipoComprobante.Text;
+            parametros["pNumeroVenta"]     = "(PREVIA)";
+            parametros["pFecha"]           = DateTime.Now.ToString("dd/MM/yyyy");
+            parametros["pHora"]            = DateTime.Now.ToString(@"hh\:mm\:ss");
+            parametros["pEstado"]          = "PREVIA";
+            parametros["pMetodoPago"]      = "-";
+            parametros["pSubTotal"]        = $"S/ {txtSubtotal.Text}";
+
+            decimal descuento = decimal.TryParse(txtDescuento.Text, out decimal ds) ? ds : 0;
+            parametros["pDescuento"] = $"S/ {descuento:N2}";
+            parametros["pIGV"]       = $"S/ {txtIGV.Text}";
+            parametros["pTotal"]     = $"S/ {txtTotalPagar.Text}";
+            parametros["pCliente"]   = lblNombreCliente.Text;
+            parametros["pDocCliente"]= lblDNICliente.Text;
+
+            var usuario = SesionActual.Usuario;
+            parametros["pEncargado"] = usuario?.NombreCompleto ?? "Usuario";
+
+            int numero = 1;
+            foreach (DataGridViewRow row in dgvCarritoVenta.Rows)
+            {
+                if (row.IsNewRow || row.Tag == null) continue;
+                var item = (dynamic)row.Tag;
+
+                var _cv = row.Cells["colCantidad"].Value;
+                decimal cantBase = (_cv != null && decimal.TryParse(_cv.ToString(), out decimal _cvp)) ? _cvp : 0m;
+                decimal cantUnidades = (decimal)item.CantidadUnidades;
+
+                string totalStr = row.Cells["colTotalDV"].Value?.ToString() ?? "0";
+                TryParseMonto(totalStr, out decimal totalFila);
+
+                string simbolo  = item.UnidadSimbolo ?? "";
+                string cantTxt  = cantBase.ToString("N2") + (string.IsNullOrEmpty(simbolo) ? "" : " " + simbolo);
+                string nombrePres = row.Cells["colPresentacionDV"].Value?.ToString() ?? "";
+
+                dt.Rows.Add(numero++,
+                    row.Cells["colProductoDV"].Value?.ToString() ?? "",
+                    nombrePres,
+                    cantTxt,
+                    (decimal)item.PrecioUnitario,
+                    totalFila);
+            }
+            return dt;
         }
     }
 }

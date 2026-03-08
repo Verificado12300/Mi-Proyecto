@@ -366,6 +366,12 @@
     <Compile Include="Forms\Shared\FormMotivoAnulacion.Designer.cs">
       <DependentUpon>FormMotivoAnulacion.cs</DependentUpon>
     </Compile>
+    <Compile Include="Forms\Ventas\FormPago.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\Ventas\FormPago.Designer.cs">
+      <DependentUpon>FormPago.cs</DependentUpon>
+    </Compile>
     <Compile Include="Forms\Ventas\FormDetalleVenta.cs">
       <SubType>Form</SubType>
     </Compile>
